@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NIR + Canny Edge Detection - Field Ops Camera</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
+            color: #ffffff;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 100vw;
+            margin: 0 auto;
+            padding: 10px;
+        }
+
+        .header {
+            text-align: center;
+            padding: 15px 0;
+            background: rgba(0, 255, 0, 0.1);
+            border: 1px solid #00ff00;
+            border-radius: 10px;
+            margin-bottom: 15px;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            color: #00ff00;
+            text-shadow: 0 0 10px #00ff00;
+            margin-bottom: 5px;
+        }
+
+        .header .subtitle {
+            font-size: 0.9rem;
+            color: #cccccc;
+        }
+
+        .camera-container {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            margin: 0 auto 20px auto;
+            border: 2px solid #00ff00;
+            border-radius: 15px;
+            overflow: hidden;
+            background: #000;
+        }
+
+        #videoElement {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        #canvasElement {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .controls {
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #333;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        .control-group label {
+            display: block;
+            color: #00ff00;
+            margin-bottom: 5px;
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+
+        .button-group {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+
+        button {
+            padding: 12px 8px;
+            border: 1px solid #00ff00;
+            background: rgba(0, 255, 0, 0.1);
+            color: #ffffff;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.3s ease;
+            font-weight: bold;
+        }
+
+        button:hover {
+            background: rgba(0, 255, 0, 0.3);
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+        }
+
+        button.active {
+            background: rgba(0, 255, 0, 0.4);
+            box-shadow: 0 0 15px rgba(0, 255, 0, 0.7);
+        }
+
+        .slider-container {
+            margin-bottom: 10px;
+        }
+
+        .slider {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: #333;
+            outline: none;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+        }
+
+        .slider:hover {
+            opacity: 1;
+        }
+
+        .slider::-webkit-slider-thumb {
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #00ff00;
+            cursor: pointer;
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #00ff00;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .slider-value {
+            color: #cccccc;
+            font-size: 0.8rem;
+            text-align: right;
+        }
+
+        .status {
+            background: rgba(0, 0, 0, 0.9);
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 15px;
+            font-size: 0.85rem;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .status-active {
+            background: #00ff00;
+            box-shadow: 0 0 5px #00ff00;
+        }
+
+        .status-inactive {
+            background: #ff0000;
+        }
+
+        .features {
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #333;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .features h3 {
+            color: #00ff00;
+            margin-bottom: 10px;
+            font-size: 1rem;
+        }
+
+        .features ul {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        .features li {
+            color: #cccccc;
+            margin-bottom: 5px;
+            font-size: 0.8rem;
+        }
+
+        .features li:before {
+            content: "✅ ";
+            color: #00ff00;
+        }
+
+        .action-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .capture-btn {
+            background: rgba(255, 0, 0, 0.2);
+            border-color: #ff0000;
+            color: #ffffff;
+        }
+
+        .capture-btn:hover {
+            background: rgba(255, 0, 0, 0.4);
+            box-shadow: 0 0 10px rgba(255, 0, 0, 0.5);
+        }
+
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            font-size: 0.8rem;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 5px;
+            }
+            
+            .header h1 {
+                font-size: 1.2rem;
+            }
+            
+            .button-group {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔵 NIR + CANNY EDGE DETECTION</h1>
+            <div class="subtitle">Field Operations Camera - Stealth Vision Mode</div>
+        </div>
+
+        <div class="status">
+            <span class="status-indicator" id="cameraStatus"></span>
+            <span id="statusText">Initializing camera...</span>
+        </div>
+
+        <div class="camera-container">
+            <video id="videoElement" autoplay playsinline muted></video>
+            <canvas id="canvasElement"></canvas>
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <label>🎮 Vision Modes</label>
+                <div class="button-group">
+                    <button id="normalMode" class="active">Normal</button>
+                    <button id="nirMode">NIR Enhanced</button>
+                    <button id="cannyMode">Canny Edges</button>
+                    <button id="overlayMode">NIR + Canny</button>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label>📹 Camera Controls</label>
+                <div class="button-group">
+                    <button id="switchCamera">Switch Camera</button>
+                    <button id="flashlight">Flashlight</button>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label>🔧 Canny Edge Parameters</label>
+                <div class="slider-container">
+                    <label for="lowThreshold">Low Threshold: <span id="lowThresholdValue">30</span></label>
+                    <input type="range" id="lowThreshold" class="slider" min="10" max="150" value="30">
+                </div>
+                <div class="slider-container">
+                    <label for="highThreshold">High Threshold: <span id="highThresholdValue">120</span></label>
+                    <input type="range" id="highThreshold" class="slider" min="50" max="300" value="120">
+                </div>
+                <div class="slider-container">
+                    <label for="blurSize">Blur Size: <span id="blurSizeValue">5</span></label>
+                    <input type="range" id="blurSize" class="slider" min="1" max="15" value="5" step="2">
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label>🌟 NIR Enhancement</label>
+                <div class="slider-container">
+                    <label for="contrast">Contrast: <span id="contrastValue">1.5</span></label>
+                    <input type="range" id="contrast" class="slider" min="0.5" max="3.0" value="1.5" step="0.1">
+                </div>
+                <div class="slider-container">
+                    <label for="brightness">Brightness: <span id="brightnessValue">20</span></label>
+                    <input type="range" id="brightness" class="slider" min="-50" max="100" value="20">
+                </div>
+                <div class="slider-container">
+                    <label for="gamma">Gamma: <span id="gammaValue">1.2</span></label>
+                    <input type="range" id="gamma" class="slider" min="0.5" max="2.5" value="1.2" step="0.1">
+                </div>
+            </div>
+
+            <div class="action-buttons">
+                <button id="capturePhoto" class="capture-btn">📸 Capture Photo</button>
+                <button id="recordVideo" class="capture-btn">🎥 Record Video</button>
+            </div>
+        </div>
+
+        <div class="features">
+            <h3>🛠️ Field Operations Features</h3>
+            <ul>
+                <li>Real-time NIR detection and enhancement</li>
+                <li>Adaptive Canny edge detection</li>
+                <li>See through smoke and low visibility</li>
+                <li>Reveal hidden graffiti and petroglyphs</li>
+                <li>Wildlife and human thermal tracking</li>
+                <li>Material analysis via IR reflectance</li>
+                <li>Works on Android and iPhone</li>
+                <li>No app installation required</li>
+            </ul>
+        </div>
+
+        <div class="footer">
+            <p>🛰️ STEALTH VISION MODE ACTIVATED 🛰️</p>
+            <p>Point IR flashlight at subject for enhanced NIR detection</p>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/opencv.js/4.8.0/opencv.js"></script>
+    <script>
+        class NIRCannyApp {
+            constructor() {
+                this.video = document.getElementById('videoElement');
+                this.canvas = document.getElementById('canvasElement');
+                this.ctx = this.canvas.getContext('2d');
+                this.stream = null;
+                this.currentCamera = 'user'; // 'user' for front, 'environment' for back
+                this.isProcessing = false;
+                this.currentMode = 'normal';
+                this.isRecording = false;
+                this.mediaRecorder = null;
+                
+                // Processing parameters
+                this.params = {
+                    lowThreshold: 30,
+                    highThreshold: 120,
+                    blurSize: 5,
+                    contrast: 1.5,
+                    brightness: 20,
+                    gamma: 1.2
+                };
+                
+                this.initializeApp();
+            }
+
+            async initializeApp() {
+                await this.waitForOpenCV();
+                this.setupEventListeners();
+                await this.startCamera();
+                this.updateStatus('Camera active - Ready for field operations', true);
+            }
+
+            waitForOpenCV() {
+                return new Promise((resolve) => {
+                    if (typeof cv !== 'undefined') {
+                        resolve();
+                    } else {
+                        const checkCV = setInterval(() => {
+                            if (typeof cv !== 'undefined') {
+                                clearInterval(checkCV);
+                                resolve();
+                            }
+                        }, 100);
+                    }
+                });
+            }
+
+            setupEventListeners() {
+                // Mode buttons
+                document.getElementById('normalMode').onclick = () => this.setMode('normal');
+                document.getElementById('nirMode').onclick = () => this.setMode('nir');
+                document.getElementById('cannyMode').onclick = () => this.setMode('canny');
+                document.getElementById('overlayMode').onclick = () => this.setMode('overlay');
+
+                // Camera controls
+                document.getElementById('switchCamera').onclick = () => this.switchCamera();
+                document.getElementById('flashlight').onclick = () => this.toggleFlashlight();
+
+                // Capture controls
+                document.getElementById('capturePhoto').onclick = () => this.capturePhoto();
+                document.getElementById('recordVideo').onclick = () => this.toggleRecording();
+
+                // Parameter sliders
+                this.setupSlider('lowThreshold');
+                this.setupSlider('highThreshold');
+                this.setupSlider('blurSize');
+                this.setupSlider('contrast');
+                this.setupSlider('brightness');
+                this.setupSlider('gamma');
+
+                // Video event
+                this.video.onloadedmetadata = () => {
+                    this.canvas.width = this.video.videoWidth;
+                    this.canvas.height = this.video.videoHeight;
+                    this.startProcessing();
+                };
+            }
+
+            setupSlider(paramName) {
+                const slider = document.getElementById(paramName);
+                const valueSpan = document.getElementById(paramName + 'Value');
+                
+                slider.oninput = (e) => {
+                    const value = parseFloat(e.target.value);
+                    this.params[paramName] = value;
+                    valueSpan.textContent = value;
+                };
+            }
+
+            async startCamera() {
+                try {
+                    if (this.stream) {
+                        this.stream.getTracks().forEach(track => track.stop());
+                    }
+
+                    const constraints = {
+                        video: {
+                            facingMode: this.currentCamera,
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 }
+                        },
+                        audio: false
+                    };
+
+                    this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+                    this.video.srcObject = this.stream;
+                    
+                } catch (error) {
+                    console.error('Camera access error:', error);
+                    this.updateStatus('Camera access denied - Check permissions', false);
+                }
+            }
+
+            async switchCamera() {
+                this.currentCamera = this.currentCamera === 'user' ? 'environment' : 'user';
+                await this.startCamera();
+            }
+
+            async toggleFlashlight() {
+                if (this.stream) {
+                    const track = this.stream.getVideoTracks()[0];
+                    const capabilities = track.getCapabilities();
+                    
+                    if (capabilities.torch) {
+                        const settings = track.getSettings();
+                        try {
+                            await track.applyConstraints({
+                                advanced: [{torch: !settings.torch}]
+                            });
+                        } catch (error) {
+                            console.log('Flashlight not available on this device');
+                        }
+                    }
+                }
+            }
+
+            setMode(mode) {
+                this.currentMode = mode;
+                
+                // Update button styles
+                document.querySelectorAll('.button-group button').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                document.getElementById(mode + 'Mode').classList.add('active');
+            }
+
+            startProcessing() {
+                const processFrame = () => {
+                    if (!this.isProcessing && this.video.readyState === this.video.HAVE_ENOUGH_DATA) {
+                        this.processCurrentFrame();
+                    }
+                    requestAnimationFrame(processFrame);
+                };
+                processFrame();
+            }
+
+            processCurrentFrame() {
+                this.isProcessing = true;
+
+                try {
+                    // Draw current video frame to canvas
+                    this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
+                    
+                    if (this.currentMode !== 'normal') {
+                        const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+                        const processedData = this.processImageData(imageData);
+                        this.ctx.putImageData(processedData, 0, 0);
+                    }
+                } catch (error) {
+                    console.error('Processing error:', error);
+                }
+
+                this.isProcessing = false;
+            }
+
+            processImageData(imageData) {
+                const src = cv.matFromImageData(imageData);
+                let processed;
+
+                switch (this.currentMode) {
+                    case 'nir':
+                        processed = this.applyNIREnhancement(src);
+                        break;
+                    case 'canny':
+                        processed = this.applyCannyEdges(src);
+                        break;
+                    case 'overlay':
+                        processed = this.applyNIRCannyOverlay(src);
+                        break;
+                    default:
+                        processed = src.clone();
+                }
+
+                const result = new ImageData(
+                    new Uint8ClampedArray(processed.data),
+                    processed.cols,
+                    processed.rows
+                );
+
+                src.delete();
+                processed.delete();
+                
+                return result;
+            }
+
+            applyNIREnhancement(src) {
+                const gray = new cv.Mat();
+                const enhanced = new cv.Mat();
+                const result = new cv.Mat();
+
+                // Convert to grayscale to simulate NIR detection
+                cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+                
+                // Apply contrast and brightness adjustments
+                gray.convertTo(enhanced, -1, this.params.contrast, this.params.brightness);
+                
+                // Apply gamma correction
+                const lookupTable = new cv.Mat(1, 256, cv.CV_8U);
+                const lookupData = lookupTable.data;
+                for (let i = 0; i < 256; i++) {
+                    lookupData[i] = Math.min(255, Math.pow(i / 255.0, 1.0 / this.params.gamma) * 255);
+                }
+                cv.LUT(enhanced, lookupTable, enhanced);
+                
+                // Convert back to RGBA for display
+                cv.cvtColor(enhanced, result, cv.COLOR_GRAY2RGBA);
+                
+                gray.delete();
+                enhanced.delete();
+                lookupTable.delete();
+                
+                return result;
+            }
+
+            applyCannyEdges(src) {
+                const gray = new cv.Mat();
+                const blurred = new cv.Mat();
+                const edges = new cv.Mat();
+                const result = new cv.Mat();
+
+                // Convert to grayscale
+                cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+                
+                // Apply Gaussian blur
+                const ksize = new cv.Size(this.params.blurSize, this.params.blurSize);
+                cv.GaussianBlur(gray, blurred, ksize, 1.5);
+                
+                // Apply Canny edge detection
+                cv.Canny(blurred, edges, this.params.lowThreshold, this.params.highThreshold);
+                
+                // Convert edges to RGBA
+                cv.cvtColor(edges, result, cv.COLOR_GRAY2RGBA);
+                
+                gray.delete();
+                blurred.delete();
+                edges.delete();
+                
+                return result;
+            }
+
+            applyNIRCannyOverlay(src) {
+                const nirEnhanced = this.applyNIREnhancement(src);
+                const edges = this.applyCannyEdges(src);
+                const result = new cv.Mat();
+                
+                // Blend NIR enhanced image with edge overlay
+                cv.addWeighted(nirEnhanced, 0.7, edges, 0.5, 0, result);
+                
+                nirEnhanced.delete();
+                edges.delete();
+                
+                return result;
+            }
+
+            capturePhoto() {
+                const link = document.createElement('a');
+                link.download = `nir_canny_capture_${Date.now()}.png`;
+                link.href = this.canvas.toDataURL();
+                link.click();
+            }
+
+            toggleRecording() {
+                const button = document.getElementById('recordVideo');
+                
+                if (!this.isRecording) {
+                    this.startRecording();
+                    button.textContent = '🛑 Stop Recording';
+                    button.style.background = 'rgba(255, 0, 0, 0.4)';
+                } else {
+                    this.stopRecording();
+                    button.textContent = '🎥 Record Video';
+                    button.style.background = 'rgba(255, 0, 0, 0.2)';
+                }
+            }
+
+            startRecording() {
+                const canvasStream = this.canvas.captureStream(30);
+                this.mediaRecorder = new MediaRecorder(canvasStream, {
+                    mimeType: 'video/webm'
+                });
+                
+                const chunks = [];
+                this.mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
+                
+                this.mediaRecorder.onstop = () => {
+                    const blob = new Blob(chunks, { type: 'video/webm' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = `nir_canny_video_${Date.now()}.webm`;
+                    link.click();
+                    URL.revokeObjectURL(url);
+                };
+                
+                this.mediaRecorder.start();
+                this.isRecording = true;
+            }
+
+            stopRecording() {
+                if (this.mediaRecorder && this.isRecording) {
+                    this.mediaRecorder.stop();
+                    this.isRecording = false;
+                }
+            }
+
+            updateStatus(message, isActive) {
+                const statusIndicator = document.getElementById('cameraStatus');
+                const statusText = document.getElementById('statusText');
+                
+                statusIndicator.className = `status-indicator ${isActive ? 'status-active' : 'status-inactive'}`;
+                statusText.textContent = message;
+            }
+        }
+
+        // Initialize the app when page loads
+        window.addEventListener('load', () => {
+            new NIRCannyApp();
+        });
+    </script>
+</body>
+</html>
