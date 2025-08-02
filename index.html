@@ -54,6 +54,7 @@
             border-radius: 15px;
             overflow: hidden;
             background: #000;
+            min-height: 300px;
         }
 
         #videoElement {
@@ -118,6 +119,11 @@
         button.active {
             background: rgba(0, 255, 0, 0.4);
             box-shadow: 0 0 15px rgba(0, 255, 0, 0.7);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
 
         .slider-container {
@@ -190,6 +196,56 @@
             background: #ff0000;
         }
 
+        .status-loading {
+            background: #ffaa00;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.5; }
+            50% { opacity: 1; }
+            100% { opacity: 0.5; }
+        }
+
+        .troubleshooting {
+            background: rgba(255, 165, 0, 0.1);
+            border: 1px solid #ffa500;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .troubleshooting h3 {
+            color: #ffa500;
+            margin-bottom: 10px;
+            font-size: 1rem;
+        }
+
+        .troubleshooting ul {
+            color: #cccccc;
+            margin-left: 20px;
+            font-size: 0.85rem;
+        }
+
+        .troubleshooting button {
+            margin: 5px 5px 0 0;
+            background: rgba(255, 165, 0, 0.2);
+            border-color: #ffa500;
+        }
+
+        .debug-info {
+            background: rgba(0, 0, 0, 0.9);
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 10px;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.75rem;
+            color: #00ff00;
+            overflow-x: auto;
+            white-space: pre-wrap;
+        }
+
         .features {
             background: rgba(0, 0, 0, 0.8);
             border: 1px solid #333;
@@ -238,44 +294,6 @@
             box-shadow: 0 0 10px rgba(255, 0, 0, 0.5);
         }
 
-        .troubleshooting {
-            background: rgba(255, 165, 0, 0.1);
-            border: 1px solid #ffa500;
-            border-radius: 10px;
-            padding: 15px;
-            margin-bottom: 15px;
-        }
-
-        .troubleshooting h3 {
-            color: #ffa500;
-            margin-bottom: 10px;
-            font-size: 1rem;
-        }
-
-        .troubleshooting ul {
-            color: #cccccc;
-            margin-left: 20px;
-            font-size: 0.85rem;
-        }
-
-        .troubleshooting button {
-            margin: 5px 5px 0 0;
-            background: rgba(255, 165, 0, 0.2);
-            border-color: #ffa500;
-        }
-
-        .debug-info {
-            background: rgba(0, 0, 0, 0.9);
-            border: 1px solid #333;
-            border-radius: 8px;
-            padding: 10px;
-            margin: 10px 0;
-            font-family: 'Courier New', monospace;
-            font-size: 0.75rem;
-            color: #00ff00;
-            overflow-x: auto;
-        }
-
         .footer {
             text-align: center;
             padding: 20px;
@@ -307,14 +325,15 @@
 
         <div class="status">
             <span class="status-indicator" id="cameraStatus"></span>
-            <span id="statusText">Initializing camera...</span>
+            <span id="statusText">Initializing system...</span>
         </div>
 
         <div id="troubleshootingPanel" class="troubleshooting" style="display: none;">
-            <h3>🔧 Camera Troubleshooting</h3>
+            <h3>🔧 System Troubleshooting</h3>
             <div id="troubleshootingContent"></div>
-            <button id="retryCamera">🔄 Retry Camera Access</button>
+            <button id="retrySystem">🔄 Retry Initialization</button>
             <button id="debugInfo">📊 Show Debug Info</button>
+            <button id="simpleMode">📱 Simple Camera Mode</button>
         </div>
 
         <div class="camera-container">
@@ -328,8 +347,8 @@
                 <div class="button-group">
                     <button id="normalMode" class="active">Normal</button>
                     <button id="nirMode">NIR Enhanced</button>
-                    <button id="cannyMode">Canny Edges</button>
-                    <button id="overlayMode">NIR + Canny</button>
+                    <button id="cannyMode" disabled>Canny Edges</button>
+                    <button id="overlayMode" disabled>NIR + Canny</button>
                 </div>
             </div>
 
@@ -341,7 +360,7 @@
                 </div>
             </div>
 
-            <div class="control-group">
+            <div class="control-group" id="cannyControls" style="display: none;">
                 <label>🔧 Canny Edge Parameters</label>
                 <div class="slider-container">
                     <label for="lowThreshold">Low Threshold: <span id="lowThresholdValue">30</span></label>
@@ -383,7 +402,7 @@
             <h3>🛠️ Field Operations Features</h3>
             <ul>
                 <li>Real-time NIR detection and enhancement</li>
-                <li>Adaptive Canny edge detection</li>
+                <li>Adaptive Canny edge detection (when OpenCV loads)</li>
                 <li>See through smoke and low visibility</li>
                 <li>Reveal hidden graffiti and petroglyphs</li>
                 <li>Wildlife and human thermal tracking</li>
@@ -399,7 +418,6 @@
         </div>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/opencv.js/4.8.0/opencv.js"></script>
     <script>
         class NIRCannyApp {
             constructor() {
@@ -407,12 +425,14 @@
                 this.canvas = document.getElementById('canvasElement');
                 this.ctx = this.canvas.getContext('2d');
                 this.stream = null;
-                this.currentCamera = 'environment'; // Start with back camera
+                this.currentCamera = 'environment';
                 this.isProcessing = false;
                 this.currentMode = 'normal';
                 this.isRecording = false;
                 this.mediaRecorder = null;
                 this.debugData = {};
+                this.openCVReady = false;
+                this.simpleMode = false;
                 
                 // Processing parameters
                 this.params = {
@@ -428,9 +448,27 @@
             }
 
             async initializeApp() {
-                this.updateStatus('Checking browser compatibility...', false);
+                this.updateStatus('Checking browser compatibility...', 'loading');
                 
-                // Check if we're on HTTPS or localhost
+                // Step 1: Check basic requirements
+                if (!this.checkBasicRequirements()) {
+                    return;
+                }
+
+                // Step 2: Initialize camera first (don't wait for OpenCV)
+                this.updateStatus('Requesting camera access...', 'loading');
+                await this.initializeCamera();
+
+                // Step 3: Load OpenCV in background
+                this.updateStatus('Loading OpenCV for advanced features...', 'loading');
+                this.loadOpenCV();
+
+                // Step 4: Setup UI
+                this.setupEventListeners();
+            }
+
+            checkBasicRequirements() {
+                // Check HTTPS
                 if (!this.isSecureContext()) {
                     this.showTroubleshooting('HTTPS Required', 
                         'Camera access requires HTTPS. Please access this page via:<br>' +
@@ -438,7 +476,7 @@
                         '• GitHub Pages (automatically HTTPS)<br>' +
                         '• Localhost for testing<br>' +
                         '• Local file:// URLs won\'t work');
-                    return;
+                    return false;
                 }
 
                 // Check MediaDevices support
@@ -448,17 +486,10 @@
                         '• Chrome or Firefox on mobile<br>' +
                         '• Safari on iOS<br>' +
                         '• Samsung Internet on Android');
-                    return;
+                    return false;
                 }
 
-                this.updateStatus('Loading OpenCV...', false);
-                await this.waitForOpenCV();
-                
-                this.updateStatus('Setting up controls...', false);
-                this.setupEventListeners();
-                
-                this.updateStatus('Requesting camera permission...', false);
-                await this.startCameraWithRetry();
+                return true;
             }
 
             isSecureContext() {
@@ -468,35 +499,129 @@
                        location.hostname === '127.0.0.1';
             }
 
-            async startCameraWithRetry() {
+            async initializeCamera() {
                 let attempts = 0;
                 const maxAttempts = 3;
                 
                 while (attempts < maxAttempts) {
                     attempts++;
-                    this.updateStatus(`Attempting camera access (${attempts}/${maxAttempts})...`, false);
+                    this.updateStatus(`Attempting camera access (${attempts}/${maxAttempts})...`, 'loading');
                     
                     try {
                         await this.startCamera();
-                        return; // Success!
+                        this.updateStatus('Camera active - Basic NIR mode ready! 🎯', 'active');
+                        return;
                     } catch (error) {
-                        this.debugData[`attempt_${attempts}`] = {
+                        this.debugData[`camera_attempt_${attempts}`] = {
                             error: error.name,
                             message: error.message,
-                            camera: this.currentCamera
+                            camera: this.currentCamera,
+                            timestamp: new Date().toISOString()
                         };
                         
                         if (attempts < maxAttempts) {
-                            // Try switching cameras
                             this.currentCamera = this.currentCamera === 'environment' ? 'user' : 'environment';
-                            this.updateStatus(`Trying ${this.currentCamera} camera...`, false);
                             await new Promise(resolve => setTimeout(resolve, 1000));
                         }
                     }
                 }
                 
-                // All attempts failed
                 this.handleCameraError();
+            }
+
+            async loadOpenCV() {
+                try {
+                    // Try multiple CDN sources
+                    const openCVSources = [
+                        'https://cdnjs.cloudflare.com/ajax/libs/opencv.js/4.8.0/opencv.js',
+                        'https://cdn.jsdelivr.net/npm/opencv-js@1.2.1/opencv.js',
+                        'https://docs.opencv.org/4.8.0/opencv.js'
+                    ];
+
+                    for (let i = 0; i < openCVSources.length; i++) {
+                        try {
+                            this.updateStatus(`Loading OpenCV from source ${i + 1}...`, 'loading');
+                            await this.loadScript(openCVSources[i]);
+                            
+                            // Wait for OpenCV to initialize
+                            await this.waitForOpenCV();
+                            
+                            this.openCVReady = true;
+                            this.updateStatus('Full NIR + Canny Edge mode ready! 🚀', 'active');
+                            this.enableAdvancedFeatures();
+                            return;
+                        } catch (error) {
+                            this.debugData[`opencv_attempt_${i + 1}`] = error.message;
+                            if (i < openCVSources.length - 1) {
+                                continue; // Try next source
+                            }
+                        }
+                    }
+                    
+                    // All OpenCV sources failed
+                    this.updateStatus('Camera ready - OpenCV features disabled', 'active');
+                    this.showOpenCVWarning();
+                    
+                } catch (error) {
+                    this.updateStatus('Camera ready - Basic mode only', 'active');
+                    this.showOpenCVWarning();
+                }
+            }
+
+            loadScript(src) {
+                return new Promise((resolve, reject) => {
+                    const script = document.createElement('script');
+                    script.src = src;
+                    script.onload = resolve;
+                    script.onerror = () => reject(new Error(`Failed to load ${src}`));
+                    script.timeout = 10000; // 10 second timeout
+                    document.head.appendChild(script);
+                });
+            }
+
+            waitForOpenCV() {
+                return new Promise((resolve, reject) => {
+                    let attempts = 0;
+                    const maxAttempts = 50; // 5 seconds max
+                    
+                    const checkCV = () => {
+                        attempts++;
+                        if (typeof cv !== 'undefined' && cv.Mat) {
+                            resolve();
+                        } else if (attempts >= maxAttempts) {
+                            reject(new Error('OpenCV timeout'));
+                        } else {
+                            setTimeout(checkCV, 100);
+                        }
+                    };
+                    
+                    checkCV();
+                });
+            }
+
+            enableAdvancedFeatures() {
+                // Enable Canny edge detection buttons
+                document.getElementById('cannyMode').disabled = false;
+                document.getElementById('overlayMode').disabled = false;
+                document.getElementById('cannyControls').style.display = 'block';
+                
+                // Start processing if not in simple mode
+                if (!this.simpleMode) {
+                    this.startProcessing();
+                }
+            }
+
+            showOpenCVWarning() {
+                const warningHtml = `
+                    <div style="background: rgba(255, 165, 0, 0.1); border: 1px solid #ffa500; border-radius: 8px; padding: 10px; margin: 10px 0;">
+                        <strong>⚠️ OpenCV Loading Failed</strong><br>
+                        Basic NIR enhancement is available, but Canny edge detection requires OpenCV.<br>
+                        • Check your internet connection<br>
+                        • Try refreshing the page<br>
+                        • Use "Simple Camera Mode" for basic functionality
+                    </div>
+                `;
+                document.querySelector('.features').insertAdjacentHTML('afterend', warningHtml);
             }
 
             handleCameraError() {
@@ -504,7 +629,7 @@
             }
 
             getCameraErrorHelp() {
-                const lastError = this.debugData[`attempt_3`];
+                const lastError = this.debugData[`camera_attempt_3`];
                 let help = 'Camera access failed. Common solutions:<br><br>';
                 
                 if (lastError && lastError.error === 'NotAllowedError') {
@@ -545,22 +670,7 @@
                 troubleshootingContent.innerHTML = `<strong>${title}:</strong><br><br>${content}`;
                 panel.style.display = 'block';
                 
-                this.updateStatus('Camera initialization failed - See troubleshooting below', false);
-            }
-
-            waitForOpenCV() {
-                return new Promise((resolve) => {
-                    if (typeof cv !== 'undefined') {
-                        resolve();
-                    } else {
-                        const checkCV = setInterval(() => {
-                            if (typeof cv !== 'undefined') {
-                                clearInterval(checkCV);
-                                resolve();
-                            }
-                        }, 100);
-                    }
-                });
+                this.updateStatus('System initialization failed - See troubleshooting below', 'inactive');
             }
 
             setupEventListeners() {
@@ -579,8 +689,9 @@
                 document.getElementById('recordVideo').onclick = () => this.toggleRecording();
 
                 // Troubleshooting controls
-                document.getElementById('retryCamera').onclick = () => this.retryCamera();
+                document.getElementById('retrySystem').onclick = () => this.retrySystem();
                 document.getElementById('debugInfo').onclick = () => this.showDebugInfo();
+                document.getElementById('simpleMode').onclick = () => this.enableSimpleMode();
 
                 // Parameter sliders
                 this.setupSlider('lowThreshold');
@@ -594,21 +705,36 @@
                 this.video.onloadedmetadata = () => {
                     this.canvas.width = this.video.videoWidth;
                     this.canvas.height = this.video.videoHeight;
-                    this.updateStatus('Camera active - Ready for field operations! 🛰️', true);
-                    document.getElementById('troubleshootingPanel').style.display = 'none';
-                    this.startProcessing();
+                    
+                    if (this.openCVReady && !this.simpleMode) {
+                        this.startProcessing();
+                    }
                 };
 
                 this.video.onerror = (e) => {
                     console.error('Video error:', e);
-                    this.updateStatus('Video stream error', false);
+                    this.updateStatus('Video stream error', 'inactive');
                 };
             }
 
-            async retryCamera() {
+            enableSimpleMode() {
+                this.simpleMode = true;
                 document.getElementById('troubleshootingPanel').style.display = 'none';
-                this.debugData = {}; // Reset debug data
-                await this.startCameraWithRetry();
+                this.updateStatus('Simple camera mode - NIR enhancement only', 'active');
+                
+                // Disable advanced features
+                document.getElementById('cannyMode').disabled = true;
+                document.getElementById('overlayMode').disabled = true;
+                
+                this.initializeCamera();
+            }
+
+            async retrySystem() {
+                document.getElementById('troubleshootingPanel').style.display = 'none';
+                this.debugData = {};
+                this.openCVReady = false;
+                this.simpleMode = false;
+                await this.initializeApp();
             }
 
             showDebugInfo() {
@@ -620,16 +746,13 @@
                     mediaDevicesSupported: !!navigator.mediaDevices,
                     getUserMediaSupported: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
                     currentCamera: this.currentCamera,
-                    attempts: this.debugData
+                    openCVReady: this.openCVReady,
+                    simpleMode: this.simpleMode,
+                    errors: this.debugData
                 };
 
-                const debugHtml = `<div class="debug-info">
-                    <strong>Debug Information:</strong><br>
-                    ${JSON.stringify(debugInfo, null, 2).replace(/\n/g, '<br>').replace(/ /g, '&nbsp;')}
-                </div>`;
-
-                const troubleshootingContent = document.getElementById('troubleshootingContent');
-                troubleshootingContent.innerHTML += debugHtml;
+                const debugHtml = `<div class="debug-info">${JSON.stringify(debugInfo, null, 2)}</div>`;
+                document.getElementById('troubleshootingContent').innerHTML += debugHtml;
             }
 
             setupSlider(paramName) {
@@ -649,14 +772,6 @@
                         this.stream.getTracks().forEach(track => track.stop());
                     }
 
-                    // First check if cameras are available
-                    const devices = await navigator.mediaDevices.enumerateDevices();
-                    const videoDevices = devices.filter(device => device.kind === 'videoinput');
-                    
-                    if (videoDevices.length === 0) {
-                        throw new Error('No camera devices found');
-                    }
-
                     const constraints = {
                         video: {
                             facingMode: this.currentCamera,
@@ -666,31 +781,28 @@
                         audio: false
                     };
 
-                    this.updateStatus('Requesting camera permission...', false);
                     this.stream = await navigator.mediaDevices.getUserMedia(constraints);
                     this.video.srcObject = this.stream;
                     
-                    // Force video to play
-                    this.video.play().catch(e => {
-                        console.log('Video play failed, but stream should still work:', e);
+                    return new Promise((resolve, reject) => {
+                        this.video.onloadedmetadata = () => {
+                            this.video.play().then(resolve).catch(reject);
+                        };
+                        this.video.onerror = reject;
                     });
                     
                 } catch (error) {
                     console.error('Camera access error:', error);
-                    this.debugData.lastError = {
-                        name: error.name,
-                        message: error.message,
-                        timestamp: new Date().toISOString()
-                    };
-                    throw error; // Re-throw for retry logic
+                    throw error;
                 }
             }
 
             async switchCamera() {
                 if (this.stream) {
                     this.currentCamera = this.currentCamera === 'user' ? 'environment' : 'user';
-                    this.updateStatus(`Switching to ${this.currentCamera} camera...`, false);
+                    this.updateStatus(`Switching to ${this.currentCamera} camera...`, 'loading');
                     await this.startCamera();
+                    this.updateStatus('Camera switched successfully', 'active');
                 }
             }
 
@@ -705,17 +817,23 @@
                             await track.applyConstraints({
                                 advanced: [{torch: !settings.torch}]
                             });
-                            this.updateStatus(`Flashlight ${!settings.torch ? 'ON' : 'OFF'}`, true);
+                            this.updateStatus(`Flashlight ${!settings.torch ? 'ON' : 'OFF'}`, 'active');
                         } catch (error) {
-                            this.updateStatus('Flashlight not available on this device', true);
+                            this.updateStatus('Flashlight not available on this device', 'active');
                         }
                     } else {
-                        this.updateStatus('Flashlight not supported on this device', true);
+                        this.updateStatus('Flashlight not supported on this device', 'active');
                     }
                 }
             }
 
             setMode(mode) {
+                // Check if mode requires OpenCV
+                if ((mode === 'canny' || mode === 'overlay') && !this.openCVReady) {
+                    this.updateStatus('OpenCV required for edge detection - use NIR mode', 'inactive');
+                    return;
+                }
+
                 this.currentMode = mode;
                 
                 // Update button styles
@@ -724,7 +842,7 @@
                 });
                 document.getElementById(mode + 'Mode').classList.add('active');
                 
-                this.updateStatus(`${mode.toUpperCase()} mode activated`, true);
+                this.updateStatus(`${mode.toUpperCase()} mode activated`, 'active');
             }
 
             startProcessing() {
@@ -744,7 +862,11 @@
                     // Draw current video frame to canvas
                     this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
                     
-                    if (this.currentMode !== 'normal') {
+                    if (this.currentMode === 'nir') {
+                        // Apply NIR enhancement without OpenCV
+                        this.applyBasicNIREnhancement();
+                    } else if (this.openCVReady && this.currentMode !== 'normal') {
+                        // Use OpenCV for advanced processing
                         const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
                         const processedData = this.processImageData(imageData);
                         this.ctx.putImageData(processedData, 0, 0);
@@ -756,7 +878,33 @@
                 this.isProcessing = false;
             }
 
+            applyBasicNIREnhancement() {
+                const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+                const data = imageData.data;
+                
+                for (let i = 0; i < data.length; i += 4) {
+                    // Convert to grayscale and enhance
+                    const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+                    
+                    // Apply contrast and brightness
+                    let enhanced = gray * this.params.contrast + this.params.brightness;
+                    
+                    // Apply gamma correction
+                    enhanced = Math.pow(enhanced / 255, 1 / this.params.gamma) * 255;
+                    enhanced = Math.max(0, Math.min(255, enhanced));
+                    
+                    data[i] = enhanced;     // R
+                    data[i + 1] = enhanced; // G
+                    data[i + 2] = enhanced; // B
+                    // Alpha channel stays the same
+                }
+                
+                this.ctx.putImageData(imageData, 0, 0);
+            }
+
             processImageData(imageData) {
+                if (!this.openCVReady) return imageData;
+                
                 const src = cv.matFromImageData(imageData);
                 let processed;
 
@@ -791,21 +939,15 @@
                 const enhanced = new cv.Mat();
                 const result = new cv.Mat();
 
-                // Convert to grayscale to simulate NIR detection
                 cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-                
-                // Apply contrast and brightness adjustments
                 gray.convertTo(enhanced, -1, this.params.contrast, this.params.brightness);
                 
-                // Apply gamma correction
                 const lookupTable = new cv.Mat(1, 256, cv.CV_8U);
                 const lookupData = lookupTable.data;
                 for (let i = 0; i < 256; i++) {
                     lookupData[i] = Math.min(255, Math.pow(i / 255.0, 1.0 / this.params.gamma) * 255);
                 }
                 cv.LUT(enhanced, lookupTable, enhanced);
-                
-                // Convert back to RGBA for display
                 cv.cvtColor(enhanced, result, cv.COLOR_GRAY2RGBA);
                 
                 gray.delete();
@@ -821,17 +963,10 @@
                 const edges = new cv.Mat();
                 const result = new cv.Mat();
 
-                // Convert to grayscale
                 cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-                
-                // Apply Gaussian blur
                 const ksize = new cv.Size(this.params.blurSize, this.params.blurSize);
                 cv.GaussianBlur(gray, blurred, ksize, 1.5);
-                
-                // Apply Canny edge detection
                 cv.Canny(blurred, edges, this.params.lowThreshold, this.params.highThreshold);
-                
-                // Convert edges to RGBA
                 cv.cvtColor(edges, result, cv.COLOR_GRAY2RGBA);
                 
                 gray.delete();
@@ -846,7 +981,6 @@
                 const edges = this.applyCannyEdges(src);
                 const result = new cv.Mat();
                 
-                // Blend NIR enhanced image with edge overlay
                 cv.addWeighted(nirEnhanced, 0.7, edges, 0.5, 0, result);
                 
                 nirEnhanced.delete();
@@ -857,10 +991,10 @@
 
             capturePhoto() {
                 const link = document.createElement('a');
-                link.download = `nir_canny_capture_${Date.now()}.png`;
+                link.download = `nir_capture_${Date.now()}.png`;
                 link.href = this.canvas.toDataURL();
                 link.click();
-                this.updateStatus('Photo captured!', true);
+                this.updateStatus('Photo captured!', 'active');
             }
 
             toggleRecording() {
@@ -880,9 +1014,7 @@
             startRecording() {
                 try {
                     const canvasStream = this.canvas.captureStream(30);
-                    this.mediaRecorder = new MediaRecorder(canvasStream, {
-                        mimeType: 'video/webm'
-                    });
+                    this.mediaRecorder = new MediaRecorder(canvasStream);
                     
                     const chunks = [];
                     this.mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
@@ -892,17 +1024,17 @@
                         const url = URL.createObjectURL(blob);
                         const link = document.createElement('a');
                         link.href = url;
-                        link.download = `nir_canny_video_${Date.now()}.webm`;
+                        link.download = `nir_video_${Date.now()}.webm`;
                         link.click();
                         URL.revokeObjectURL(url);
-                        this.updateStatus('Video saved!', true);
+                        this.updateStatus('Video saved!', 'active');
                     };
                     
                     this.mediaRecorder.start();
                     this.isRecording = true;
-                    this.updateStatus('Recording started...', true);
+                    this.updateStatus('Recording started...', 'active');
                 } catch (error) {
-                    this.updateStatus('Recording not supported on this device', false);
+                    this.updateStatus('Recording not supported', 'inactive');
                 }
             }
 
@@ -910,17 +1042,17 @@
                 if (this.mediaRecorder && this.isRecording) {
                     this.mediaRecorder.stop();
                     this.isRecording = false;
-                    this.updateStatus('Recording stopped', true);
+                    this.updateStatus('Recording stopped', 'active');
                 }
             }
 
-            updateStatus(message, isActive) {
+            updateStatus(message, status) {
                 const statusIndicator = document.getElementById('cameraStatus');
                 const statusText = document.getElementById('statusText');
                 
-                statusIndicator.className = `status-indicator ${isActive ? 'status-active' : 'status-inactive'}`;
+                statusIndicator.className = `status-indicator status-${status}`;
                 statusText.textContent = message;
-                console.log('Status:', message);
+                console.log(`Status [${status}]:`, message);
             }
         }
 
