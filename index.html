@@ -72,6 +72,49 @@
             pointer-events: none;
         }
 
+        .sensor-dashboard {
+            background: rgba(0, 0, 0, 0.9);
+            border: 1px solid #00ff00;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .sensor-dashboard h3 {
+            color: #00ff00;
+            margin-bottom: 10px;
+            font-size: 1rem;
+            text-align: center;
+        }
+
+        .sensor-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+        }
+
+        .sensor-item {
+            background: rgba(0, 255, 0, 0.05);
+            border: 1px solid rgba(0, 255, 0, 0.3);
+            border-radius: 6px;
+            padding: 8px;
+            text-align: center;
+        }
+
+        .sensor-item label {
+            display: block;
+            color: #00ff00;
+            font-size: 0.8rem;
+            margin-bottom: 4px;
+            font-weight: bold;
+        }
+
+        .sensor-item div {
+            color: #ffffff;
+            font-size: 0.9rem;
+            font-family: 'Courier New', monospace;
+        }
+
         .controls {
             background: rgba(0, 0, 0, 0.8);
             border: 1px solid #333;
@@ -336,6 +379,36 @@
             <button id="simpleMode">📱 Simple Camera Mode</button>
         </div>
 
+        <div id="sensorDashboard" class="sensor-dashboard">
+            <h3>📊 Real-Time Sensor Data</h3>
+            <div class="sensor-grid">
+                <div class="sensor-item">
+                    <label>📹 Camera</label>
+                    <div id="cameraSpecs">Initializing...</div>
+                </div>
+                <div class="sensor-item">
+                    <label>🔵 NIR Signal</label>
+                    <div id="nirSignal">--</div>
+                </div>
+                <div class="sensor-item">
+                    <label>⚡ Frame Rate</label>
+                    <div id="frameRate">-- FPS</div>
+                </div>
+                <div class="sensor-item">
+                    <label>🌟 Light Level</label>
+                    <div id="lightLevel">--</div>
+                </div>
+                <div class="sensor-item">
+                    <label>🔍 Edge Count</label>
+                    <div id="edgeCount">--</div>
+                </div>
+                <div class="sensor-item">
+                    <label>⏱️ Process Time</label>
+                    <div id="processTime">-- ms</div>
+                </div>
+            </div>
+        </div>
+
         <div class="camera-container">
             <video id="videoElement" autoplay playsinline muted></video>
             <canvas id="canvasElement"></canvas>
@@ -347,8 +420,18 @@
                 <div class="button-group">
                     <button id="normalMode" class="active">Normal</button>
                     <button id="nirMode">NIR Enhanced</button>
-                    <button id="cannyMode" disabled>Canny Edges</button>
-                    <button id="overlayMode" disabled>NIR + Canny</button>
+                    <button id="cannyMode" disabled>Edge Detection</button>
+                    <button id="overlayMode" disabled>NIR + Edges</button>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label>🌈 Field Filters</label>
+                <div class="button-group">
+                    <button id="thermalMode">Thermal Sim</button>
+                    <button id="nightMode">Night Vision</button>
+                    <button id="motionMode">Motion Detect</button>
+                    <button id="contrastMode">High Contrast</button>
                 </div>
             </div>
 
@@ -434,14 +517,31 @@
                 this.openCVReady = false;
                 this.simpleMode = false;
                 
+                // Performance tracking
+                this.frameCount = 0;
+                this.lastFrameTime = Date.now();
+                this.processingTimes = [];
+                this.lightLevels = [];
+                this.previousFrame = null;
+                
+                // Camera specs
+                this.cameraSpecs = {
+                    width: 0,
+                    height: 0,
+                    fps: 0,
+                    facingMode: 'environment'
+                };
+                
                 // Processing parameters
                 this.params = {
                     lowThreshold: 30,
                     highThreshold: 120,
                     blurSize: 5,
-                    contrast: 1.5,
-                    brightness: 20,
-                    gamma: 1.2
+                    contrast: 1.8,  // Increased for better NIR
+                    brightness: 30, // Increased for better NIR
+                    gamma: 0.8,     // Inverted for better NIR visibility
+                    edgeIntensity: 1.0,
+                    motionSensitivity: 50
                 };
                 
                 this.initializeApp();
@@ -599,6 +699,50 @@
                 });
             }
 
+            startSensorUpdates() {
+                setInterval(() => {
+                    this.updateSensorDashboard();
+                }, 1000); // Update every second
+            }
+
+            updateCameraSpecs() {
+                const specs = `${this.cameraSpecs.width}x${this.cameraSpecs.height} | ${this.cameraSpecs.facingMode}`;
+                document.getElementById('cameraSpecs').textContent = specs;
+            }
+
+            updateSensorDashboard() {
+                // Calculate frame rate
+                const now = Date.now();
+                const deltaTime = now - this.lastFrameTime;
+                if (deltaTime > 0) {
+                    this.cameraSpecs.fps = Math.round(1000 / deltaTime);
+                    document.getElementById('frameRate').textContent = `${this.cameraSpecs.fps} FPS`;
+                }
+
+                // Update NIR signal strength (simulated based on brightness)
+                const avgLight = this.lightLevels.length > 0 ? 
+                    this.lightLevels.reduce((a, b) => a + b, 0) / this.lightLevels.length : 0;
+                const nirSignal = Math.max(0, Math.min(100, Math.round((255 - avgLight) / 2.55)));
+                document.getElementById('nirSignal').textContent = `${nirSignal}%`;
+
+                // Update light level
+                document.getElementById('lightLevel').textContent = 
+                    avgLight < 50 ? 'Very Dark' : 
+                    avgLight < 100 ? 'Dark' : 
+                    avgLight < 150 ? 'Low Light' : 
+                    avgLight < 200 ? 'Medium' : 'Bright';
+
+                // Update processing time
+                if (this.processingTimes.length > 0) {
+                    const avgProcessTime = this.processingTimes.reduce((a, b) => a + b, 0) / this.processingTimes.length;
+                    document.getElementById('processTime').textContent = `${Math.round(avgProcessTime)} ms`;
+                }
+
+                // Clear arrays to prevent memory buildup
+                if (this.lightLevels.length > 10) this.lightLevels = this.lightLevels.slice(-5);
+                if (this.processingTimes.length > 10) this.processingTimes = this.processingTimes.slice(-5);
+            }
+
             enableAdvancedFeatures() {
                 // Enable Canny edge detection buttons
                 document.getElementById('cannyMode').disabled = false;
@@ -674,11 +818,17 @@
             }
 
             setupEventListeners() {
-                // Mode buttons
+                // Vision mode buttons
                 document.getElementById('normalMode').onclick = () => this.setMode('normal');
                 document.getElementById('nirMode').onclick = () => this.setMode('nir');
                 document.getElementById('cannyMode').onclick = () => this.setMode('canny');
                 document.getElementById('overlayMode').onclick = () => this.setMode('overlay');
+
+                // Field filter buttons
+                document.getElementById('thermalMode').onclick = () => this.setMode('thermal');
+                document.getElementById('nightMode').onclick = () => this.setMode('night');
+                document.getElementById('motionMode').onclick = () => this.setMode('motion');
+                document.getElementById('contrastMode').onclick = () => this.setMode('contrast');
 
                 // Camera controls
                 document.getElementById('switchCamera').onclick = () => this.switchCamera();
@@ -706,9 +856,18 @@
                     this.canvas.width = this.video.videoWidth;
                     this.canvas.height = this.video.videoHeight;
                     
+                    // Update camera specs
+                    this.cameraSpecs.width = this.video.videoWidth;
+                    this.cameraSpecs.height = this.video.videoHeight;
+                    this.cameraSpecs.facingMode = this.currentCamera;
+                    this.updateCameraSpecs();
+                    
                     if (this.openCVReady && !this.simpleMode) {
                         this.startProcessing();
                     }
+                    
+                    // Start sensor dashboard updates
+                    this.startSensorUpdates();
                 };
 
                 this.video.onerror = (e) => {
@@ -829,18 +988,34 @@
 
             setMode(mode) {
                 // Check if mode requires OpenCV
-                if ((mode === 'canny' || mode === 'overlay') && !this.openCVReady) {
-                    this.updateStatus('OpenCV required for edge detection - use NIR mode', 'inactive');
+                if (['canny', 'overlay', 'motion'].includes(mode) && !this.openCVReady) {
+                    this.updateStatus('OpenCV required for advanced modes - use NIR/Thermal modes', 'inactive');
                     return;
                 }
 
                 this.currentMode = mode;
                 
-                // Update button styles
+                // Update button styles for both button groups
                 document.querySelectorAll('.button-group button').forEach(btn => {
                     btn.classList.remove('active');
                 });
-                document.getElementById(mode + 'Mode').classList.add('active');
+                
+                // Find and activate the corresponding button
+                const modeButtons = {
+                    'normal': 'normalMode',
+                    'nir': 'nirMode', 
+                    'canny': 'cannyMode',
+                    'overlay': 'overlayMode',
+                    'thermal': 'thermalMode',
+                    'night': 'nightMode',
+                    'motion': 'motionMode',
+                    'contrast': 'contrastMode'
+                };
+                
+                const buttonId = modeButtons[mode];
+                if (buttonId) {
+                    document.getElementById(buttonId).classList.add('active');
+                }
                 
                 this.updateStatus(`${mode.toUpperCase()} mode activated`, 'active');
             }
@@ -857,25 +1032,105 @@
 
             processCurrentFrame() {
                 this.isProcessing = true;
+                const startTime = Date.now();
 
                 try {
                     // Draw current video frame to canvas
                     this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
                     
+                    // Calculate light level for sensor dashboard
+                    const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+                    this.calculateLightLevel(imageData);
+                    
+                    // Apply processing based on mode
                     if (this.currentMode === 'nir') {
-                        // Apply NIR enhancement without OpenCV
                         this.applyBasicNIREnhancement();
+                    } else if (['thermal', 'night', 'contrast'].includes(this.currentMode)) {
+                        this.applyBasicFieldFilter();
                     } else if (this.openCVReady && this.currentMode !== 'normal') {
                         // Use OpenCV for advanced processing
-                        const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
                         const processedData = this.processImageData(imageData);
                         this.ctx.putImageData(processedData, 0, 0);
                     }
+                    
+                    // Track frame timing
+                    this.frameCount++;
+                    this.lastFrameTime = Date.now();
+                    
                 } catch (error) {
                     console.error('Processing error:', error);
                 }
 
+                // Record processing time
+                const processingTime = Date.now() - startTime;
+                this.processingTimes.push(processingTime);
+
                 this.isProcessing = false;
+            }
+
+            calculateLightLevel(imageData) {
+                const data = imageData.data;
+                let totalBrightness = 0;
+                let pixelCount = 0;
+                
+                // Sample every 4th pixel for performance
+                for (let i = 0; i < data.length; i += 16) {
+                    const r = data[i];
+                    const g = data[i + 1];
+                    const b = data[i + 2];
+                    totalBrightness += (r + g + b) / 3;
+                    pixelCount++;
+                }
+                
+                const avgBrightness = totalBrightness / pixelCount;
+                this.lightLevels.push(avgBrightness);
+            }
+
+            applyBasicFieldFilter() {
+                const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+                const data = imageData.data;
+                
+                for (let i = 0; i < data.length; i += 4) {
+                    let r = data[i];
+                    let g = data[i + 1];
+                    let b = data[i + 2];
+                    
+                    switch (this.currentMode) {
+                        case 'thermal':
+                            // Thermal-like false color mapping
+                            const intensity = (r + g + b) / 3;
+                            if (intensity < 85) {
+                                r = 0; g = 0; b = Math.min(255, intensity * 3);
+                            } else if (intensity < 170) {
+                                r = Math.min(255, (intensity - 85) * 3); g = 0; b = 255 - (intensity - 85) * 3;
+                            } else {
+                                r = 255; g = Math.min(255, (intensity - 170) * 3); b = 0;
+                            }
+                            break;
+                            
+                        case 'night':
+                            // Green-tinted night vision
+                            const avg = (r + g + b) / 3;
+                            const enhanced = Math.min(255, avg * this.params.contrast + this.params.brightness);
+                            r = enhanced * 0.2;
+                            g = enhanced;
+                            b = enhanced * 0.2;
+                            break;
+                            
+                        case 'contrast':
+                            // High contrast enhancement
+                            const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+                            const contrasted = gray > 128 ? 255 : 0;
+                            r = g = b = contrasted;
+                            break;
+                    }
+                    
+                    data[i] = r;
+                    data[i + 1] = g;
+                    data[i + 2] = b;
+                }
+                
+                this.ctx.putImageData(imageData, 0, 0);
             }
 
             applyBasicNIREnhancement() {
@@ -883,18 +1138,23 @@
                 const data = imageData.data;
                 
                 for (let i = 0; i < data.length; i += 4) {
-                    // Convert to grayscale and enhance
-                    const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+                    // Convert to grayscale (emphasizing red channel for better NIR simulation)
+                    const gray = 0.5 * data[i] + 0.3 * data[i + 1] + 0.2 * data[i + 2];
                     
                     // Apply contrast and brightness
                     let enhanced = gray * this.params.contrast + this.params.brightness;
                     
-                    // Apply gamma correction
+                    // Apply gamma correction for better visibility
                     enhanced = Math.pow(enhanced / 255, 1 / this.params.gamma) * 255;
+                    
+                    // Invert for better dark environment visibility
+                    enhanced = 255 - enhanced;
+                    
+                    // Clamp values
                     enhanced = Math.max(0, Math.min(255, enhanced));
                     
                     data[i] = enhanced;     // R
-                    data[i + 1] = enhanced; // G
+                    data[i + 1] = enhanced; // G  
                     data[i + 2] = enhanced; // B
                     // Alpha channel stays the same
                 }
@@ -918,6 +1178,9 @@
                     case 'overlay':
                         processed = this.applyNIRCannyOverlay(src);
                         break;
+                    case 'motion':
+                        processed = this.applyMotionDetection(src);
+                        break;
                     default:
                         processed = src.clone();
                 }
@@ -937,21 +1200,27 @@
             applyNIREnhancement(src) {
                 const gray = new cv.Mat();
                 const enhanced = new cv.Mat();
+                const inverted = new cv.Mat();
                 const result = new cv.Mat();
 
                 cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
                 gray.convertTo(enhanced, -1, this.params.contrast, this.params.brightness);
                 
+                // Apply gamma correction
                 const lookupTable = new cv.Mat(1, 256, cv.CV_8U);
                 const lookupData = lookupTable.data;
                 for (let i = 0; i < 256; i++) {
                     lookupData[i] = Math.min(255, Math.pow(i / 255.0, 1.0 / this.params.gamma) * 255);
                 }
                 cv.LUT(enhanced, lookupTable, enhanced);
-                cv.cvtColor(enhanced, result, cv.COLOR_GRAY2RGBA);
+                
+                // Invert for better visibility in dark environments
+                cv.bitwise_not(enhanced, inverted);
+                cv.cvtColor(inverted, result, cv.COLOR_GRAY2RGBA);
                 
                 gray.delete();
                 enhanced.delete();
+                inverted.delete();
                 lookupTable.delete();
                 
                 return result;
@@ -967,6 +1236,11 @@
                 const ksize = new cv.Size(this.params.blurSize, this.params.blurSize);
                 cv.GaussianBlur(gray, blurred, ksize, 1.5);
                 cv.Canny(blurred, edges, this.params.lowThreshold, this.params.highThreshold);
+                
+                // Count edges for sensor dashboard
+                const edgeCount = cv.countNonZero(edges);
+                document.getElementById('edgeCount').textContent = edgeCount;
+                
                 cv.cvtColor(edges, result, cv.COLOR_GRAY2RGBA);
                 
                 gray.delete();
@@ -977,15 +1251,94 @@
             }
 
             applyNIRCannyOverlay(src) {
-                const nirEnhanced = this.applyNIREnhancement(src);
-                const edges = this.applyCannyEdges(src);
+                const nirBase = this.applyNIREnhancement(src);
+                const gray = new cv.Mat();
+                const blurred = new cv.Mat();
+                const edges = new cv.Mat();
+                const greenEdges = new cv.Mat();
+                const result = new cv.Mat();
+
+                // Generate edge detection
+                cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+                const ksize = new cv.Size(this.params.blurSize, this.params.blurSize);
+                cv.GaussianBlur(gray, blurred, ksize, 1.5);
+                cv.Canny(blurred, edges, this.params.lowThreshold, this.params.highThreshold);
+                
+                // Convert edges to bright green overlay
+                cv.cvtColor(edges, greenEdges, cv.COLOR_GRAY2RGBA);
+                
+                // Make edges bright green
+                const greenData = greenEdges.data;
+                for (let i = 0; i < greenData.length; i += 4) {
+                    if (greenData[i] > 0) { // If there's an edge pixel
+                        greenData[i] = 0;       // R = 0
+                        greenData[i + 1] = 255; // G = 255 (bright green)
+                        greenData[i + 2] = 0;   // B = 0
+                        greenData[i + 3] = 255; // A = 255 (full opacity)
+                    }
+                }
+                
+                // Blend NIR base with bright green edges
+                cv.addWeighted(nirBase, 0.8, greenEdges, 0.6, 0, result);
+                
+                // Count edges for sensor dashboard
+                const edgeCount = cv.countNonZero(edges);
+                document.getElementById('edgeCount').textContent = edgeCount;
+                
+                nirBase.delete();
+                gray.delete();
+                blurred.delete();
+                edges.delete();
+                greenEdges.delete();
+                
+                return result;
+            }
+
+            applyMotionDetection(src) {
+                const gray = new cv.Mat();
                 const result = new cv.Mat();
                 
-                cv.addWeighted(nirEnhanced, 0.7, edges, 0.5, 0, result);
+                cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
                 
-                nirEnhanced.delete();
-                edges.delete();
+                if (this.previousFrame) {
+                    const diff = new cv.Mat();
+                    const thresh = new cv.Mat();
+                    
+                    // Calculate frame difference
+                    cv.absdiff(this.previousFrame, gray, diff);
+                    cv.threshold(diff, thresh, this.params.motionSensitivity, 255, cv.THRESH_BINARY);
+                    
+                    // Highlight motion in red
+                    cv.cvtColor(thresh, result, cv.COLOR_GRAY2RGBA);
+                    const motionData = result.data;
+                    for (let i = 0; i < motionData.length; i += 4) {
+                        if (motionData[i] > 0) {
+                            motionData[i] = 255;     // R = 255 (red)
+                            motionData[i + 1] = 0;   // G = 0
+                            motionData[i + 2] = 0;   // B = 0
+                        }
+                    }
+                    
+                    // Blend with original image
+                    const originalRGBA = new cv.Mat();
+                    cv.cvtColor(src, originalRGBA, cv.COLOR_RGBA2RGBA);
+                    cv.addWeighted(originalRGBA, 0.7, result, 0.3, 0, result);
+                    
+                    diff.delete();
+                    thresh.delete();
+                    originalRGBA.delete();
+                }
                 
+                // Store current frame for next comparison
+                if (this.previousFrame) this.previousFrame.delete();
+                this.previousFrame = gray.clone();
+                
+                // If no previous frame, just return grayscale
+                if (!result.rows) {
+                    cv.cvtColor(gray, result, cv.COLOR_GRAY2RGBA);
+                }
+                
+                gray.delete();
                 return result;
             }
 
