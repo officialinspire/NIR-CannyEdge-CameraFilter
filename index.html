@@ -61,6 +61,8 @@
             width: 100%;
             height: auto;
             display: block;
+            image-rendering: crisp-edges;
+            image-rendering: -webkit-optimize-contrast;
         }
 
         #canvasElement {
@@ -70,6 +72,8 @@
             width: 100%;
             height: 100%;
             pointer-events: none;
+            image-rendering: crisp-edges;
+            image-rendering: -webkit-optimize-contrast;
         }
 
         .sensor-dashboard {
@@ -520,16 +524,20 @@
                 // Performance tracking
                 this.frameCount = 0;
                 this.lastFrameTime = Date.now();
+                this.fpsCounter = 0;
+                this.fpsStartTime = Date.now();
                 this.processingTimes = [];
                 this.lightLevels = [];
                 this.previousFrame = null;
+                this.sensorUpdateInterval = null;
                 
                 // Camera specs
                 this.cameraSpecs = {
                     width: 0,
                     height: 0,
                     fps: 0,
-                    facingMode: 'environment'
+                    facingMode: 'environment',
+                    actualFrameRate: 0
                 };
                 
                 // Processing parameters
@@ -700,9 +708,43 @@
             }
 
             startSensorUpdates() {
-                setInterval(() => {
+                // Clear any existing interval
+                if (this.sensorUpdateInterval) {
+                    clearInterval(this.sensorUpdateInterval);
+                }
+                
+                // Initialize sensor display immediately
+                this.updateSensorDashboard();
+                
+                // Update sensor dashboard every 500ms for responsive data
+                this.sensorUpdateInterval = setInterval(() => {
                     this.updateSensorDashboard();
-                }, 1000); // Update every second
+                }, 500);
+                
+                // Also get device info if available
+                this.getDeviceInfo();
+            }
+
+            async getDeviceInfo() {
+                try {
+                    // Get video track capabilities for detailed camera info
+                    if (this.stream) {
+                        const videoTrack = this.stream.getVideoTracks()[0];
+                        if (videoTrack) {
+                            const capabilities = videoTrack.getCapabilities();
+                            const settings = videoTrack.getSettings();
+                            
+                            this.cameraSpecs.actualFrameRate = settings.frameRate || 30;
+                            this.cameraSpecs.width = settings.width || this.video.videoWidth;
+                            this.cameraSpecs.height = settings.height || this.video.videoHeight;
+                            
+                            console.log('Camera capabilities:', capabilities);
+                            console.log('Camera settings:', settings);
+                        }
+                    }
+                } catch (error) {
+                    console.log('Could not get detailed camera info:', error);
+                }
             }
 
             updateCameraSpecs() {
@@ -711,36 +753,89 @@
             }
 
             updateSensorDashboard() {
-                // Calculate frame rate
                 const now = Date.now();
-                const deltaTime = now - this.lastFrameTime;
-                if (deltaTime > 0) {
-                    this.cameraSpecs.fps = Math.round(1000 / deltaTime);
-                    document.getElementById('frameRate').textContent = `${this.cameraSpecs.fps} FPS`;
+                
+                try {
+                    // Calculate and display actual frame rate
+                    this.fpsCounter++;
+                    const fpsElapsed = (now - this.fpsStartTime) / 1000;
+                    if (fpsElapsed >= 1.0) {
+                        this.cameraSpecs.fps = Math.round(this.fpsCounter / fpsElapsed);
+                        const fpsElement = document.getElementById('frameRate');
+                        if (fpsElement) {
+                            fpsElement.textContent = `${this.cameraSpecs.fps} FPS`;
+                        }
+                        this.fpsCounter = 0;
+                        this.fpsStartTime = now;
+                    }
+
+                    // Update NIR signal strength (based on darkness levels - higher darkness = stronger NIR signal)
+                    if (this.lightLevels.length > 0) {
+                        const avgLight = this.lightLevels.reduce((a, b) => a + b, 0) / this.lightLevels.length;
+                        // NIR signal stronger in darker conditions (inverted relationship)
+                        const nirSignal = Math.max(0, Math.min(100, Math.round((255 - avgLight) / 2.55)));
+                        
+                        const nirElement = document.getElementById('nirSignal');
+                        const lightElement = document.getElementById('lightLevel');
+                        
+                        if (nirElement) {
+                            nirElement.textContent = `${nirSignal}%`;
+                        }
+                        
+                        // Update light level description
+                        let lightDescription;
+                        if (avgLight < 30) lightDescription = 'Very Dark';
+                        else if (avgLight < 60) lightDescription = 'Dark';
+                        else if (avgLight < 100) lightDescription = 'Low Light';
+                        else if (avgLight < 150) lightDescription = 'Medium';
+                        else if (avgLight < 200) lightDescription = 'Bright';
+                        else lightDescription = 'Very Bright';
+                        
+                        if (lightElement) {
+                            lightElement.textContent = lightDescription;
+                        }
+                    } else {
+                        const nirElement = document.getElementById('nirSignal');
+                        const lightElement = document.getElementById('lightLevel');
+                        if (nirElement) nirElement.textContent = 'Calculating...';
+                        if (lightElement) lightElement.textContent = 'Calculating...';
+                    }
+
+                    // Update processing time
+                    if (this.processingTimes.length > 0) {
+                        const avgProcessTime = this.processingTimes.reduce((a, b) => a + b, 0) / this.processingTimes.length;
+                        const processElement = document.getElementById('processTime');
+                        if (processElement) {
+                            processElement.textContent = `${Math.round(avgProcessTime)} ms`;
+                        }
+                    } else {
+                        const processElement = document.getElementById('processTime');
+                        if (processElement) {
+                            processElement.textContent = 'N/A';
+                        }
+                    }
+
+                    // Initialize edge count if not set
+                    const edgeCountElement = document.getElementById('edgeCount');
+                    if (edgeCountElement && edgeCountElement.textContent === '--') {
+                        if (['canny', 'overlay'].includes(this.currentMode) && this.openCVReady) {
+                            edgeCountElement.textContent = 'Calculating...';
+                        } else {
+                            edgeCountElement.textContent = 'N/A';
+                        }
+                    }
+
+                    // Clear old data to prevent memory buildup (keep last 5 readings)
+                    if (this.lightLevels.length > 5) {
+                        this.lightLevels = this.lightLevels.slice(-5);
+                    }
+                    if (this.processingTimes.length > 5) {
+                        this.processingTimes = this.processingTimes.slice(-5);
+                    }
+                    
+                } catch (error) {
+                    console.error('Sensor dashboard update error:', error);
                 }
-
-                // Update NIR signal strength (simulated based on brightness)
-                const avgLight = this.lightLevels.length > 0 ? 
-                    this.lightLevels.reduce((a, b) => a + b, 0) / this.lightLevels.length : 0;
-                const nirSignal = Math.max(0, Math.min(100, Math.round((255 - avgLight) / 2.55)));
-                document.getElementById('nirSignal').textContent = `${nirSignal}%`;
-
-                // Update light level
-                document.getElementById('lightLevel').textContent = 
-                    avgLight < 50 ? 'Very Dark' : 
-                    avgLight < 100 ? 'Dark' : 
-                    avgLight < 150 ? 'Low Light' : 
-                    avgLight < 200 ? 'Medium' : 'Bright';
-
-                // Update processing time
-                if (this.processingTimes.length > 0) {
-                    const avgProcessTime = this.processingTimes.reduce((a, b) => a + b, 0) / this.processingTimes.length;
-                    document.getElementById('processTime').textContent = `${Math.round(avgProcessTime)} ms`;
-                }
-
-                // Clear arrays to prevent memory buildup
-                if (this.lightLevels.length > 10) this.lightLevels = this.lightLevels.slice(-5);
-                if (this.processingTimes.length > 10) this.processingTimes = this.processingTimes.slice(-5);
             }
 
             enableAdvancedFeatures() {
@@ -853,8 +948,15 @@
 
                 // Video events
                 this.video.onloadedmetadata = () => {
+                    // Set canvas to exact video dimensions for crisp quality
                     this.canvas.width = this.video.videoWidth;
                     this.canvas.height = this.video.videoHeight;
+                    
+                    // Configure canvas for high quality rendering
+                    this.ctx.imageSmoothingEnabled = false;
+                    this.ctx.mozImageSmoothingEnabled = false;
+                    this.ctx.webkitImageSmoothingEnabled = false;
+                    this.ctx.msImageSmoothingEnabled = false;
                     
                     // Update camera specs
                     this.cameraSpecs.width = this.video.videoWidth;
@@ -864,10 +966,21 @@
                     
                     if (this.openCVReady && !this.simpleMode) {
                         this.startProcessing();
+                    } else {
+                        // Start basic processing for non-OpenCV modes
+                        this.startBasicProcessing();
                     }
                     
                     // Start sensor dashboard updates
                     this.startSensorUpdates();
+                    
+                    // Initialize camera info display
+                    this.updateCameraSpecs();
+                    
+                    // Force initial sensor update
+                    setTimeout(() => {
+                        this.updateSensorDashboard();
+                    }, 100);
                 };
 
                 this.video.onerror = (e) => {
@@ -931,17 +1044,27 @@
                         this.stream.getTracks().forEach(track => track.stop());
                     }
 
+                    // High-quality camera constraints for crisp image
                     const constraints = {
                         video: {
                             facingMode: this.currentCamera,
-                            width: { ideal: 1280, min: 640 },
-                            height: { ideal: 720, min: 480 }
+                            width: { ideal: 1920, min: 1280 },
+                            height: { ideal: 1080, min: 720 },
+                            frameRate: { ideal: 30, min: 15 },
+                            focusMode: 'continuous',
+                            exposureMode: 'continuous',
+                            whiteBalanceMode: 'continuous'
                         },
                         audio: false
                     };
 
                     this.stream = await navigator.mediaDevices.getUserMedia(constraints);
                     this.video.srcObject = this.stream;
+                    
+                    // Ensure highest quality video display
+                    this.video.setAttribute('playsinline', 'true');
+                    this.video.setAttribute('webkit-playsinline', 'true');
+                    this.video.style.objectFit = 'cover';
                     
                     return new Promise((resolve, reject) => {
                         this.video.onloadedmetadata = () => {
@@ -1018,6 +1141,27 @@
                 }
                 
                 this.updateStatus(`${mode.toUpperCase()} mode activated`, 'active');
+                
+                // Update sensor dashboard for mode-specific data
+                this.updateModeSpecificSensors(mode);
+            }
+
+            updateModeSpecificSensors(mode) {
+                const edgeElement = document.getElementById('edgeCount');
+                
+                // Update edge count display based on mode
+                if (['canny', 'overlay'].includes(mode) && this.openCVReady) {
+                    edgeElement.textContent = 'Calculating...';
+                } else if (mode === 'motion' && this.openCVReady) {
+                    edgeElement.textContent = 'Motion Mode';
+                } else {
+                    edgeElement.textContent = 'N/A';
+                }
+                
+                // Force immediate sensor update
+                setTimeout(() => {
+                    this.updateSensorDashboard();
+                }, 50);
             }
 
             startProcessing() {
@@ -1030,15 +1174,61 @@
                 processFrame();
             }
 
+            startBasicProcessing() {
+                const processFrame = () => {
+                    if (!this.isProcessing && this.video.readyState === this.video.HAVE_ENOUGH_DATA) {
+                        this.processBasicFrame();
+                    }
+                    requestAnimationFrame(processFrame);
+                };
+                processFrame();
+            }
+
+            processBasicFrame() {
+                this.isProcessing = true;
+                const startTime = Date.now();
+
+                try {
+                    // Draw current video frame to canvas with high quality
+                    this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
+                    
+                    // Calculate light level for sensor dashboard FIRST (before any processing)
+                    const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+                    this.calculateLightLevel(imageData);
+                    
+                    // Apply basic filters that don't require OpenCV
+                    if (['nir', 'thermal', 'night', 'contrast'].includes(this.currentMode)) {
+                        if (this.currentMode === 'nir') {
+                            this.applyBasicNIREnhancement();
+                        } else {
+                            this.applyBasicFieldFilter();
+                        }
+                    }
+                    
+                    // Track frame timing and count
+                    this.frameCount++;
+                    this.lastFrameTime = Date.now();
+                    
+                } catch (error) {
+                    console.error('Basic processing error:', error);
+                }
+
+                // Record processing time
+                const processingTime = Date.now() - startTime;
+                this.processingTimes.push(processingTime);
+
+                this.isProcessing = false;
+            }
+
             processCurrentFrame() {
                 this.isProcessing = true;
                 const startTime = Date.now();
 
                 try {
-                    // Draw current video frame to canvas
+                    // Draw current video frame to canvas with high quality
                     this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
                     
-                    // Calculate light level for sensor dashboard
+                    // Calculate light level for sensor dashboard FIRST (before any processing)
                     const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
                     this.calculateLightLevel(imageData);
                     
@@ -1053,7 +1243,7 @@
                         this.ctx.putImageData(processedData, 0, 0);
                     }
                     
-                    // Track frame timing
+                    // Track frame timing and count
                     this.frameCount++;
                     this.lastFrameTime = Date.now();
                     
@@ -1073,17 +1263,27 @@
                 let totalBrightness = 0;
                 let pixelCount = 0;
                 
-                // Sample every 4th pixel for performance
-                for (let i = 0; i < data.length; i += 16) {
-                    const r = data[i];
-                    const g = data[i + 1];
-                    const b = data[i + 2];
-                    totalBrightness += (r + g + b) / 3;
+                // Sample every 16th pixel for performance (4 pixels x 4 = 16)
+                for (let i = 0; i < data.length; i += 64) {
+                    const r = data[i] || 0;
+                    const g = data[i + 1] || 0;
+                    const b = data[i + 2] || 0;
+                    
+                    // Calculate luminance using standard formula
+                    const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+                    totalBrightness += luminance;
                     pixelCount++;
                 }
                 
-                const avgBrightness = totalBrightness / pixelCount;
-                this.lightLevels.push(avgBrightness);
+                if (pixelCount > 0) {
+                    const avgBrightness = totalBrightness / pixelCount;
+                    this.lightLevels.push(avgBrightness);
+                    
+                    // Debug log for troubleshooting
+                    if (this.frameCount % 30 === 0) { // Log every 30 frames
+                        console.log(`Light level: ${Math.round(avgBrightness)}, NIR Signal: ${Math.round((255 - avgBrightness) / 2.55)}%`);
+                    }
+                }
             }
 
             applyBasicFieldFilter() {
@@ -1141,18 +1341,19 @@
                     // Convert to grayscale (emphasizing red channel for better NIR simulation)
                     const gray = 0.5 * data[i] + 0.3 * data[i + 1] + 0.2 * data[i + 2];
                     
-                    // Apply contrast and brightness
+                    // Apply contrast and brightness enhancement
                     let enhanced = gray * this.params.contrast + this.params.brightness;
                     
                     // Apply gamma correction for better visibility
-                    enhanced = Math.pow(enhanced / 255, 1 / this.params.gamma) * 255;
+                    enhanced = Math.pow(Math.max(0, enhanced) / 255, 1 / this.params.gamma) * 255;
                     
-                    // Invert for better dark environment visibility
+                    // Invert for better dark environment visibility (NIR effect)
                     enhanced = 255 - enhanced;
                     
-                    // Clamp values
+                    // Clamp values to valid range
                     enhanced = Math.max(0, Math.min(255, enhanced));
                     
+                    // Apply to all RGB channels for greyscale effect
                     data[i] = enhanced;     // R
                     data[i + 1] = enhanced; // G  
                     data[i + 2] = enhanced; // B
@@ -1238,8 +1439,16 @@
                 cv.Canny(blurred, edges, this.params.lowThreshold, this.params.highThreshold);
                 
                 // Count edges for sensor dashboard
-                const edgeCount = cv.countNonZero(edges);
-                document.getElementById('edgeCount').textContent = edgeCount;
+                try {
+                    const edgeCount = cv.countNonZero(edges);
+                    const edgeElement = document.getElementById('edgeCount');
+                    if (edgeElement) {
+                        edgeElement.textContent = edgeCount.toLocaleString();
+                    }
+                } catch (error) {
+                    console.log('Edge count error:', error);
+                    document.getElementById('edgeCount').textContent = 'Error';
+                }
                 
                 cv.cvtColor(edges, result, cv.COLOR_GRAY2RGBA);
                 
@@ -1251,45 +1460,71 @@
             }
 
             applyNIRCannyOverlay(src) {
-                const nirBase = this.applyNIREnhancement(src);
                 const gray = new cv.Mat();
                 const blurred = new cv.Mat();
                 const edges = new cv.Mat();
-                const greenEdges = new cv.Mat();
+                const nirBase = new cv.Mat();
+                const enhanced = new cv.Mat();
+                const inverted = new cv.Mat();
                 const result = new cv.Mat();
 
-                // Generate edge detection
+                // Create NIR base (inverted greyscale)
                 cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+                gray.convertTo(enhanced, -1, this.params.contrast, this.params.brightness);
+                
+                // Apply gamma correction
+                const lookupTable = new cv.Mat(1, 256, cv.CV_8U);
+                const lookupData = lookupTable.data;
+                for (let i = 0; i < 256; i++) {
+                    lookupData[i] = Math.min(255, Math.pow(i / 255.0, 1.0 / this.params.gamma) * 255);
+                }
+                cv.LUT(enhanced, lookupTable, enhanced);
+                
+                // Invert for NIR effect
+                cv.bitwise_not(enhanced, inverted);
+                cv.cvtColor(inverted, nirBase, cv.COLOR_GRAY2RGBA);
+
+                // Generate edge detection
                 const ksize = new cv.Size(this.params.blurSize, this.params.blurSize);
                 cv.GaussianBlur(gray, blurred, ksize, 1.5);
                 cv.Canny(blurred, edges, this.params.lowThreshold, this.params.highThreshold);
                 
-                // Convert edges to bright green overlay
-                cv.cvtColor(edges, greenEdges, cv.COLOR_GRAY2RGBA);
+                // Count edges for sensor dashboard
+                try {
+                    const edgeCount = cv.countNonZero(edges);
+                    const edgeElement = document.getElementById('edgeCount');
+                    if (edgeElement) {
+                        edgeElement.textContent = edgeCount.toLocaleString();
+                    }
+                } catch (error) {
+                    console.log('Edge count error:', error);
+                    document.getElementById('edgeCount').textContent = 'Error';
+                }
                 
-                // Make edges bright green
-                const greenData = greenEdges.data;
-                for (let i = 0; i < greenData.length; i += 4) {
-                    if (greenData[i] > 0) { // If there's an edge pixel
-                        greenData[i] = 0;       // R = 0
-                        greenData[i + 1] = 255; // G = 255 (bright green)
-                        greenData[i + 2] = 0;   // B = 0
-                        greenData[i + 3] = 255; // A = 255 (full opacity)
+                // Create bright teal/lime green edge overlay
+                const edgeData = edges.data;
+                const nirData = nirBase.data;
+                
+                // Directly modify the NIR base with bright teal edges
+                for (let i = 0; i < edgeData.length; i++) {
+                    const pixelIndex = i * 4;
+                    if (edgeData[i] > 0) { // If there's an edge pixel
+                        nirData[pixelIndex] = 0;       // R = 0
+                        nirData[pixelIndex + 1] = 255; // G = 255 (bright green)
+                        nirData[pixelIndex + 2] = 200; // B = 200 (teal component)
+                        nirData[pixelIndex + 3] = 255; // A = 255 (full opacity)
                     }
                 }
                 
-                // Blend NIR base with bright green edges
-                cv.addWeighted(nirBase, 0.8, greenEdges, 0.6, 0, result);
+                result.data.set(nirData);
                 
-                // Count edges for sensor dashboard
-                const edgeCount = cv.countNonZero(edges);
-                document.getElementById('edgeCount').textContent = edgeCount;
-                
-                nirBase.delete();
                 gray.delete();
                 blurred.delete();
                 edges.delete();
-                greenEdges.delete();
+                enhanced.delete();
+                inverted.delete();
+                lookupTable.delete();
+                nirBase.delete();
                 
                 return result;
             }
